@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     frontend_url: str = "http://localhost:5173"
+    frontend_urls: str = ""
     environment: str = "development"
 
     vapid_private_key: str = ""
@@ -34,6 +35,21 @@ class Settings(BaseSettings):
     @property
     def vapid_claims(self) -> dict[str, str]:
         return {"sub": f"mailto:{self.vapid_claim_email}"}
+
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = [origin.strip().rstrip("/") for origin in self.frontend_url.split(",") if origin.strip()]
+        origins.extend(origin.strip().rstrip("/") for origin in self.frontend_urls.split(",") if origin.strip())
+        if self.environment == "development":
+            origins.extend(
+                [
+                    "http://localhost:5173",
+                    "http://127.0.0.1:5173",
+                    "http://localhost:5174",
+                    "http://127.0.0.1:5174",
+                ]
+            )
+        return sorted(set(origins))
 
 
 @lru_cache

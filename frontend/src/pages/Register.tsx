@@ -13,7 +13,7 @@ export function Register() {
   if (accessToken) return <Navigate to="/dashboard" replace />;
   return (
     <AuthShell
-      eyebrow="Start your system"
+      eyebrow="Start your preparation journey"
       title={<>Build your <span className="italic text-[#1a6b4a]">interview memory</span></>}
       subtitle="Create your workspace and get the prep plan, notes, snippets, and Knowledge Base ready from day one."
     >
