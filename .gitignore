@@ -1,0 +1,24 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+backend/.venv/
+
+# Env
+.env
+backend/.env
+frontend/.env
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# Tooling
+.coverage
+.mypy_cache/
+.ruff_cache/

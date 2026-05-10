@@ -1,0 +1,2 @@
+"""Algodiary backend package."""
+
