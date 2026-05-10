@@ -13,7 +13,17 @@ router = APIRouter(prefix="/snippets", tags=["snippets"])
 
 
 @router.get("/", response_model=list[SnippetRead])
-async def list_snippets(language: str | None = None, task_id: UUID | None = None, category: KnowledgeCategory | None = None, tags: list[str] | None = Query(None), search: str | None = None, page: int = 1, limit: int = 20, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def list_snippets(
+    language: str | None = None,
+    task_id: UUID | None = None,
+    category: KnowledgeCategory | None = None,
+    tags: list[str] | None = Query(None),
+    search: str | None = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     snippets, _ = await snippet_service.list_snippets(db, current_user.id, language, task_id, category, tags, search, page, limit)
     return snippets
 
@@ -41,4 +51,3 @@ async def update(snippet_id: UUID, payload: SnippetUpdate, db: AsyncSession = De
 @router.delete("/{snippet_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete(snippet_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> None:
     await snippet_service.delete_snippet(db, current_user.id, snippet_id)
-

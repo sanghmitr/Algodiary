@@ -1,6 +1,7 @@
 import { BarChart3, BookOpen, ChevronLeft, ChevronRight, ClipboardList, Code2, Home, NotebookTabs, Settings } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import { Logo } from "../brand/Logo";
 import { Button } from "../ui/button";
 import { cn } from "../../utils/helpers";
 
@@ -24,18 +25,14 @@ export function Sidebar() {
     });
   };
   return (
-    <aside className={cn("hidden h-screen shrink-0 overflow-y-auto border-r border-slate-200 bg-white px-3 py-4 transition-[width] duration-200 md:block", collapsed ? "w-20" : "w-64")}>
-      <div className={cn("mb-6 flex items-start gap-2", collapsed ? "justify-center px-0" : "justify-between px-3")}>
-        {!collapsed ? (
-          <div>
-            <p className="text-xl font-bold text-slate-950">Algodiary</p>
-            <p className="text-xs text-slate-500">FAANG prep tracker</p>
-          </div>
-        ) : (
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-slate-900 text-sm font-bold text-white" title="Algodiary">
-            A
-          </div>
-        )}
+    <aside className={cn("hidden h-screen shrink-0 overflow-y-auto border-r border-black/10 bg-[#fbfaf7] px-3 py-4 transition-[width] duration-200 md:block", collapsed ? "w-20" : "w-64")}>
+      <div className={cn("mb-6 flex gap-2", collapsed ? "flex-col items-center px-0" : "items-start justify-between px-3")}>
+        <Logo
+          compact={collapsed}
+          className={cn(collapsed ? "justify-center" : "min-w-0")}
+          markClassName="h-10 w-10 shrink-0 rounded-lg"
+          wordmarkClassName="text-2xl"
+        />
         <Button variant="ghost" size="icon" onClick={toggle} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>

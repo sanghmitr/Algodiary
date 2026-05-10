@@ -1,7 +1,6 @@
 import asyncio
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
-from celery import shared_task
 from pywebpush import WebPushException, webpush
 from sqlalchemy import func, select
 
@@ -15,6 +14,7 @@ from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.redis_client import get_redis
 from app.services.notification_service import create_notification, publish_user_event
+from app.workers.celery_app import celery_app
 
 
 async def _send_push(user: User, title: str, body: str) -> None:
@@ -31,7 +31,7 @@ async def _send_push(user: User, title: str, body: str) -> None:
         return
 
 
-@shared_task(name="app.workers.notification_tasks.daily_study_reminder")
+@celery_app.task(name="app.workers.notification_tasks.daily_study_reminder")
 def daily_study_reminder() -> None:
     asyncio.run(_daily_study_reminder())
 
@@ -50,7 +50,7 @@ async def _daily_study_reminder() -> None:
                 await create_notification(db, user.id, title, body, NotificationType.reminder, sent_at=datetime.now(timezone.utc))
 
 
-@shared_task(name="app.workers.notification_tasks.streak_check")
+@celery_app.task(name="app.workers.notification_tasks.streak_check")
 def streak_check() -> None:
     asyncio.run(_streak_check())
 
@@ -70,7 +70,7 @@ async def _streak_check() -> None:
                 await _send_push(user, "Do not break your streak", "Log today's progress before the day ends.")
 
 
-@shared_task(name="app.workers.notification_tasks.achievement_check")
+@celery_app.task(name="app.workers.notification_tasks.achievement_check")
 def achievement_check(user_id: str) -> None:
     asyncio.run(_achievement_check(UUID(user_id)))
 
@@ -108,4 +108,3 @@ async def _achievement_check(user_id: UUID) -> None:
                 if user:
                     await _send_push(user, "Achievement unlocked", title)
                     await create_notification(db, user_id, "Achievement unlocked", title, NotificationType.achievement, sent_at=datetime.now(timezone.utc))
-

@@ -16,6 +16,122 @@ NS = {
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
 URL_RE = re.compile(r"https?://\S+")
+SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+DSA_RESOURCE_HINTS = {
+    "neetcode",
+    "leetcode",
+    "kadane",
+    "binary search",
+    "monotonic",
+    "floyd",
+    "sliding",
+    "subarray",
+    "anagram",
+    "two pointer",
+    "two-pointer",
+    "heap",
+    "trie",
+    "graph",
+    "tree",
+    "dp",
+    "dynamic programming",
+    "backtracking",
+}
+HLD_RESOURCE_HINTS = {
+    "hellointerview",
+    "system-design",
+    "system design",
+    "systemdesign",
+    "donnemartin",
+    "scalability",
+    "load balancing",
+    "database",
+    "sharding",
+    "replication",
+    "indexing",
+    "cap",
+    "caching",
+    "redis",
+    "kafka",
+    "queue",
+    "api gateway",
+    "grpc",
+    "rest",
+    "url shortener",
+    "tinyurl",
+    "cdn",
+    "architecture",
+    "rubric",
+}
+LLD_RESOURCE_HINTS = {
+    "refactoring.guru",
+    "factory",
+    "singleton",
+    "observer",
+    "strategy",
+    "builder",
+    "pattern",
+    "solid",
+    "java",
+    "oop",
+    "class",
+    "uml",
+    "parking",
+    "splitwise",
+    "lru",
+    "lfu",
+}
+HLD_ACTION_HINTS = {
+    "hld",
+    "whiteboard",
+    "architecture",
+    "schema",
+    "sharding",
+    "scale",
+    "scaling",
+    "load balancer",
+    "cache",
+    "caching",
+    "kafka",
+    "api",
+    "url shortener",
+    "feed",
+    "system",
+}
+LLD_ACTION_HINTS = {
+    "lld",
+    "java",
+    "class",
+    "uml",
+    "oop",
+    "solid",
+    "pattern",
+    "singleton",
+    "factory",
+    "observer",
+    "strategy",
+    "builder",
+    "parking",
+    "splitwise",
+}
+DSA_ACTION_HINTS = {
+    "dsa",
+    "lc",
+    "leetcode",
+    "problem",
+    "solve",
+    "re-solve",
+    "reattempt",
+    "array",
+    "subarray",
+    "pointer",
+    "stack",
+    "binary",
+    "graph",
+    "dp",
+}
 
 
 def _column_index(cell_ref: str) -> int:
@@ -142,11 +258,115 @@ def _time_allocation(value: str) -> dict[str, int]:
     return {"dsa": _minutes(parts[0]), "hld": _minutes(parts[1]), "lld": _minutes(parts[2])}
 
 
+def _sentences(value: str) -> list[str]:
+    text = clean_seed_content(value)
+    return [part.strip() for part in SENTENCE_RE.split(text) if part.strip()]
+
+
+def _contains_any(value: str, hints: set[str]) -> bool:
+    lowered = value.lower()
+    return any(hint in lowered for hint in hints)
+
+
+def _action_parts(actions: str) -> dict[str, str]:
+    parts = _sentences(actions)
+    if not parts:
+        return {"DSA": "", "HLD": "", "LLD": ""}
+
+    buckets: dict[str, list[str]] = {"DSA": [], "HLD": [], "LLD": []}
+    for sentence in parts:
+        lowered = sentence.lower()
+        explicit_categories = {
+            category
+            for category, hints in {
+                "DSA": DSA_ACTION_HINTS,
+                "HLD": HLD_ACTION_HINTS,
+                "LLD": LLD_ACTION_HINTS,
+            }.items()
+            if _contains_any(lowered, hints)
+        }
+        if {"DSA", "HLD", "LLD"}.issubset(explicit_categories):
+            for category in buckets:
+                buckets[category].append(sentence)
+        elif "HLD" in explicit_categories and "LLD" not in explicit_categories:
+            buckets["HLD"].append(sentence)
+        elif "LLD" in explicit_categories and "HLD" not in explicit_categories:
+            buckets["LLD"].append(sentence)
+        elif "DSA" in explicit_categories:
+            buckets["DSA"].append(sentence)
+
+    if len(parts) >= 3:
+        if not buckets["DSA"]:
+            buckets["DSA"].append(parts[0])
+        if not buckets["HLD"]:
+            buckets["HLD"].append(parts[1])
+        if not buckets["LLD"]:
+            buckets["LLD"].append(parts[2])
+    elif len(parts) == 2:
+        if not buckets["DSA"]:
+            buckets["DSA"].append(parts[0])
+        if not buckets["HLD"]:
+            buckets["HLD"].append(parts[1])
+    elif not any(buckets.values()):
+        buckets["DSA"].append(parts[0])
+
+    return {category: " ".join(dict.fromkeys(items)) for category, items in buckets.items()}
+
+
+def _keywords(*values: str) -> set[str]:
+    keywords: set[str] = set()
+    for value in values:
+        for token in re.split(r"[^a-zA-Z0-9+#]+", value.lower()):
+            if len(token) >= 4:
+                keywords.add(token)
+    return keywords
+
+
+def _resource_score(line: str, category: str, *, dsa_topic: str, problems: list[dict[str, str]], hld_topic: str, lld_topic: str) -> int:
+    lowered = line.lower()
+    if category == "DSA":
+        hints = DSA_RESOURCE_HINTS | _keywords(dsa_topic, *(problem.get("title", "") for problem in problems))
+    elif category == "HLD":
+        hints = HLD_RESOURCE_HINTS | _keywords(hld_topic)
+    else:
+        hints = LLD_RESOURCE_HINTS | _keywords(lld_topic)
+    return sum(1 for hint in hints if hint and hint in lowered)
+
+
+def _resource_parts(resources: str, *, dsa_topic: str, problems: list[dict[str, str]], hld_topic: str, lld_topic: str) -> dict[str, str]:
+    buckets: dict[str, list[str]] = {"DSA": [], "HLD": [], "LLD": []}
+    for raw_line in clean_seed_content(resources).splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        scores = {
+            category: _resource_score(line, category, dsa_topic=dsa_topic, problems=problems, hld_topic=hld_topic, lld_topic=lld_topic)
+            for category in buckets
+        }
+        best_category, best_score = max(scores.items(), key=lambda item: item[1])
+        if best_score > 0:
+            buckets[best_category].append(line)
+    return {category: "\n".join(lines) for category, lines in buckets.items()}
+
+
+def _focus_part(focus: str, category: str) -> str:
+    text = clean_seed_content(focus)
+    if not text:
+        return ""
+    lowered = text.lower()
+    if category == "DSA":
+        return text
+    if category == "HLD" and _contains_any(lowered, HLD_ACTION_HINTS | {"rubric"}):
+        return text
+    if category == "LLD" and _contains_any(lowered, LLD_ACTION_HINTS):
+        return text
+    return ""
+
+
 def _note_content(
     *,
     category: str,
     day: int,
-    phase_week: str,
     title: str,
     primary_topic: str,
     problem: dict[str, str] | None = None,
@@ -156,17 +376,11 @@ def _note_content(
     revision_flag: str,
     focus: str,
 ) -> str:
-    title = clean_seed_label(title)
     primary_topic = clean_seed_label(primary_topic)
-    phase_week = clean_seed_label(phase_week.replace(chr(10), " / "))
     actions = clean_seed_content(actions)
     resources = clean_seed_content(resources)
     revision_flag = clean_seed_content(revision_flag)
-    focus = clean_seed_content(focus)
     lines = [
-        f"# Day {day}: {title}",
-        "",
-        f"**Phase / Week:** {phase_week}",
         f"**Category:** {category}",
         f"**Topic:** {primary_topic}",
     ]
@@ -176,22 +390,13 @@ def _note_content(
         lines.append(f"**LeetCode:** {problem['url']}")
     if hld_url:
         lines.append(f"**Resource:** {hld_url}")
-    lines.extend(
-        [
-            "",
-            "## Actions",
-            actions,
-            "",
-            "## Resources",
-            resources or "Add useful resources while revising.",
-            "",
-            "## Revision",
-            revision_flag or "Add revision marker when ready.",
-            "",
-            "## Interview Focus",
-            focus or "Capture edge cases, mistakes, and patterns here.",
-        ]
-    )
+    if category != "DSA" and actions:
+        lines.extend(["", "## Actions", actions])
+    if resources:
+        lines.extend(["", "## Resources", resources])
+    if revision_flag:
+        lines.extend(["", "## Revision", revision_flag])
+    lines.extend(["", "## Interview Focus", _focus_part(focus, category)])
     return "\n".join(lines)
 
 
@@ -232,6 +437,8 @@ def load_default_tasks() -> list[dict]:
         problems = _leetcode_problems(row[3] if len(row) > 3 else "", row[4] if len(row) > 4 else "")
         if not problems:
             problems = [{"title": pattern or f"Day {day} prep task", "url": "", "difficulty": ""}]
+        action_parts = _action_parts(actions)
+        resource_parts = _resource_parts(resources, dsa_topic=pattern, problems=problems, hld_topic=hld_topic, lld_topic=lld_topic)
 
         for problem_index, problem in enumerate(problems, start=1):
             order += 1
@@ -239,13 +446,12 @@ def load_default_tasks() -> list[dict]:
             content = _note_content(
                 category="DSA",
                 day=day,
-                phase_week=phase_week,
                 title=title,
                 primary_topic=pattern,
                 problem=problem,
                 hld_url=None,
-                actions=actions,
-                resources=resources,
+                actions=action_parts["DSA"],
+                resources=resource_parts["DSA"],
                 revision_flag=revision_flag,
                 focus=focus,
             )
@@ -276,12 +482,11 @@ def load_default_tasks() -> list[dict]:
             content = _note_content(
                 category="HLD",
                 day=day,
-                phase_week=phase_week,
                 title=hld_topic,
                 primary_topic=hld_topic,
                 hld_url=hld_url,
-                actions=actions,
-                resources=resources,
+                actions=action_parts["HLD"],
+                resources=resource_parts["HLD"],
                 revision_flag=revision_flag,
                 focus=focus,
             )
@@ -312,12 +517,11 @@ def load_default_tasks() -> list[dict]:
             content = _note_content(
                 category="LLD",
                 day=day,
-                phase_week=phase_week,
                 title=lld_topic,
                 primary_topic=lld_topic,
                 hld_url=None,
-                actions=actions,
-                resources=resources,
+                actions=action_parts["LLD"],
+                resources=resource_parts["LLD"],
                 revision_flag=revision_flag,
                 focus=focus,
             )

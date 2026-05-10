@@ -1,6 +1,6 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, status
-from sqlalchemy import delete, update
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
@@ -20,9 +20,12 @@ async def list_user_notifications(db: AsyncSession = Depends(get_db), current_us
 
 @router.patch("/{notification_id}/read", response_model=NotificationRead)
 async def mark_read(notification_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    notification = await db.scalar(select(Notification).where(Notification.id == notification_id, Notification.user_id == current_user.id))
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
     await db.execute(update(Notification).where(Notification.id == notification_id, Notification.user_id == current_user.id).values(is_read=True))
     await db.commit()
-    notification = await db.get(Notification, notification_id)
+    await db.refresh(notification)
     return notification
 
 
@@ -36,4 +39,3 @@ async def mark_all_read(db: AsyncSession = Depends(get_db), current_user: User =
 async def remove(notification_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> None:
     await db.execute(delete(Notification).where(Notification.id == notification_id, Notification.user_id == current_user.id))
     await db.commit()
-

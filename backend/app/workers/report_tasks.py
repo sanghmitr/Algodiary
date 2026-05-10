@@ -2,7 +2,6 @@ import asyncio
 import smtplib
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
-from celery import shared_task
 from sqlalchemy import case, func, select
 
 from app.config import settings
@@ -11,9 +10,10 @@ from app.models.notification import NotificationType
 from app.models.progress import ProgressLog
 from app.models.user import User
 from app.services.notification_service import create_notification
+from app.workers.celery_app import celery_app
 
 
-@shared_task(name="app.workers.report_tasks.weekly_progress_report")
+@celery_app.task(name="app.workers.report_tasks.weekly_progress_report")
 def weekly_progress_report() -> None:
     asyncio.run(_weekly_progress_report())
 

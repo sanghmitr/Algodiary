@@ -3,6 +3,7 @@ import { Layout } from "./components/layout/Layout";
 import { useAuthStore } from "./store/authStore";
 import { Dashboard } from "./pages/Dashboard";
 import { KnowledgeBase } from "./pages/KnowledgeBase";
+import { Landing } from "./pages/Landing";
 import { Login } from "./pages/Login";
 import { Notes } from "./pages/Notes";
 import { Progress } from "./pages/Progress";
@@ -20,6 +21,7 @@ function RequireAuth() {
 export function App() {
   return (
     <Routes>
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route element={<RequireAuth />}>
@@ -35,4 +37,3 @@ export function App() {
     </Routes>
   );
 }
-

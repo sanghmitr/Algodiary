@@ -1,4 +1,5 @@
 from datetime import date
+import logging
 from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -22,6 +23,7 @@ from app.workers.notification_tasks import achievement_check
 
 
 router = APIRouter(prefix="/progress", tags=["progress"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=list[ProgressLogRead])
@@ -32,7 +34,10 @@ async def logs(start: date | None = None, end: date | None = None, db: AsyncSess
 @router.post("/", response_model=ProgressLogRead, status_code=201)
 async def create_log(payload: ProgressLogCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     log = await progress_service.create_progress_log(db, current_user.id, payload)
-    achievement_check.delay(str(current_user.id))
+    try:
+        achievement_check.delay(str(current_user.id))
+    except Exception as exc:
+        logger.warning("Unable to enqueue achievement check for user %s: %s", current_user.id, exc)
     return log
 
 
@@ -74,4 +79,3 @@ async def add_mock(payload: MockFeedbackCreate, db: AsyncSession = Depends(get_d
 @router.patch("/mocks/{mock_id}", response_model=MockFeedbackRead)
 async def update_mock(mock_id: UUID, payload: MockFeedbackUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await progress_service.update_mock(db, current_user.id, mock_id, payload)
-
