@@ -9,6 +9,7 @@ from app.models.snippet import Snippet
 from app.schemas.snippet import SnippetCreate, SnippetUpdate
 from app.services.note_service import invalidate_kb_cache, normalize_tags, suggest_category
 from app.services.notification_service import publish_user_event
+from app.services.text_cleanup_service import ensure_user_text_clean
 
 
 async def create_snippet(db: AsyncSession, user_id: UUID, payload: SnippetCreate) -> Snippet:
@@ -28,6 +29,7 @@ async def create_snippet(db: AsyncSession, user_id: UUID, payload: SnippetCreate
 
 
 async def list_snippets(db: AsyncSession, user_id: UUID, language: str | None, task_id: UUID | None, category: KnowledgeCategory | None, tags: list[str] | None, search: str | None, page: int, limit: int) -> tuple[list[Snippet], int]:
+    await ensure_user_text_clean(db, user_id)
     stmt = select(Snippet).where(Snippet.user_id == user_id, Snippet.deleted_at.is_(None))
     count_stmt = select(func.count()).select_from(Snippet).where(Snippet.user_id == user_id, Snippet.deleted_at.is_(None))
     filters = []
@@ -81,8 +83,8 @@ async def delete_snippet(db: AsyncSession, user_id: UUID, snippet_id: UUID) -> N
 
 
 async def all_snippet_tags(db: AsyncSession, user_id: UUID) -> list[str]:
+    await ensure_user_text_clean(db, user_id)
     rows = await db.execute(
         select(func.distinct(func.jsonb_array_elements_text(Snippet.tags))).where(Snippet.user_id == user_id, Snippet.deleted_at.is_(None))
     )
     return sorted([row[0] for row in rows if row[0]])
-

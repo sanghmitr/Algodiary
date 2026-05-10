@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db
 from app.models.task import TaskPhase, TaskStatus
 from app.models.user import User
-from app.schemas.task import TaskRead, TaskReorderRequest, TaskUpdate
+from app.schemas.task import TaskCreate, TaskRead, TaskReorderRequest, TaskUpdate
 from app.services import task_service
 from app.services.notification_service import publish_user_event
 
@@ -16,6 +16,13 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 @router.get("/", response_model=list[TaskRead])
 async def list_tasks(phase: TaskPhase | None = None, week: int | None = None, status: TaskStatus | None = None, day: int | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[dict]:
     return await task_service.list_tasks(db, current_user.id, phase, week, status, day)
+
+
+@router.post("/", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
+async def create(payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict:
+    task = await task_service.create_task(db, current_user.id, payload)
+    await publish_user_event(current_user.id, "task_updated", {"id": str(task["id"]), "action": "created"})
+    return task
 
 
 @router.patch("/reorder", status_code=status.HTTP_204_NO_CONTENT)

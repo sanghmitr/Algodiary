@@ -20,13 +20,20 @@ export function KanbanBoard({ tasks, onOpen, onToggle, onReorder }: Props) {
     if (!result.destination) return;
     const moved = tasks.find((task) => task.id === result.draggableId);
     if (!moved) return;
+    const sourceStatus = result.source.droppableId as TaskStatus;
     const targetStatus = result.destination.droppableId as TaskStatus;
-    const updated = tasks
-      .filter((task) => task.id !== moved.id)
-      .filter((task) => task.status === targetStatus)
-      .sort((a, b) => a.kanban_order - b.kanban_order);
-    updated.splice(result.destination.index, 0, { ...moved, status: targetStatus });
-    onReorder(updated.map((task, index) => ({ id: task.id, status: targetStatus, kanban_order: index })));
+    const byStatus = (status: TaskStatus) => tasks.filter((task) => task.status === status).sort((a, b) => a.kanban_order - b.kanban_order);
+    const sourceItems = byStatus(sourceStatus).filter((task) => task.id !== moved.id);
+    const destinationItems = sourceStatus === targetStatus ? sourceItems : byStatus(targetStatus).filter((task) => task.id !== moved.id);
+    destinationItems.splice(result.destination.index, 0, { ...moved, status: targetStatus });
+    if (sourceStatus === targetStatus) {
+      onReorder(destinationItems.map((task, index) => ({ id: task.id, status: targetStatus, kanban_order: index })));
+      return;
+    }
+    onReorder([
+      ...sourceItems.map((task, index) => ({ id: task.id, status: sourceStatus, kanban_order: index })),
+      ...destinationItems.map((task, index) => ({ id: task.id, status: targetStatus, kanban_order: index })),
+    ]);
   };
   return (
     <DragDropContext onDragEnd={onDragEnd}>

@@ -22,3 +22,6 @@ frontend/tsconfig.tsbuildinfo
 .coverage
 .mypy_cache/
 .ruff_cache/
+
+# Local uploads
+backend/uploads/

@@ -25,6 +25,18 @@ export async function deleteNote(id: string): Promise<void> {
   await apiClient.delete(`/notes/${id}`);
 }
 
+export async function uploadNoteImage(noteId: string, file: File): Promise<{ url: string; filename: string; content_type: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await apiClient.post<{ url: string; filename: string; content_type: string }>(`/notes/${noteId}/images`, formData);
+  return response.data;
+}
+
+export async function deleteNoteImage(noteId: string, url: string): Promise<Note> {
+  const response = await apiClient.delete<Note>(`/notes/${noteId}/images`, { data: { url } });
+  return response.data;
+}
+
 export function noteTags(): Promise<string[]> {
   return getData<string[]>("/notes/tags/all");
 }

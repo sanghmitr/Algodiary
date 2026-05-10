@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     r2_endpoint: str = ""
     r2_access_key: str = ""
     r2_secret_key: str = ""
+    r2_public_url: str = ""
+    upload_dir: str = "uploads"
+    max_upload_mb: int = 8
 
     @property
     def vapid_claims(self) -> dict[str, str]:
@@ -39,4 +42,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

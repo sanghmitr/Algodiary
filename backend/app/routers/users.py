@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
 from app.models.note import Note
-from app.models.progress import ProgressLog
 from app.models.snippet import Snippet
 from app.models.task import Task, TaskStatus
 from app.models.user import User
@@ -54,16 +53,13 @@ async def stats(db: AsyncSession = Depends(get_db), current_user: User = Depends
     if cached:
         return json.loads(cached)
     total_done = await db.scalar(select(func.count()).select_from(Task).where(Task.user_id == current_user.id, Task.status == TaskStatus.done)) or 0
-    avg_score = await db.scalar(
-        select(func.avg((ProgressLog.dsa_score + ProgressLog.hld_score + ProgressLog.lld_score + ProgressLog.behavioral_score) / 4.0)).where(
-            ProgressLog.user_id == current_user.id
-        )
-    ) or 0
     week_start = date.today().toordinal() - 6
     problems = await db.scalar(
-        select(func.sum(ProgressLog.problems_solved)).where(
-            ProgressLog.user_id == current_user.id,
-            ProgressLog.logged_date >= date.fromordinal(week_start),
+        select(func.count()).select_from(Task).where(
+            Task.user_id == current_user.id,
+            Task.status == TaskStatus.done,
+            Task.dsa_topic.is_not(None),
+            func.date(Task.updated_at) >= date.fromordinal(week_start),
         )
     ) or 0
     notes = await db.scalar(select(func.count()).select_from(Note).where(Note.user_id == current_user.id, Note.deleted_at.is_(None))) or 0
@@ -72,7 +68,7 @@ async def stats(db: AsyncSession = Depends(get_db), current_user: User = Depends
     payload = {
         "total_tasks_done": total_done,
         "current_streak": int(await redis.get(f"streak:{current_user.id}") or 0),
-        "avg_daily_score": round(float(avg_score), 2),
+        "avg_daily_score": 0,
         "days_remaining": (current_user.target_date - date.today()).days if current_user.target_date else None,
         "problems_solved_this_week": problems,
         "total_notes": notes,
@@ -81,4 +77,3 @@ async def stats(db: AsyncSession = Depends(get_db), current_user: User = Depends
     }
     await redis.set(cache_key, json.dumps(payload, default=str), ex=300)
     return payload
-

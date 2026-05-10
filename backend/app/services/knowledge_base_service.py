@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.redis_client import get_redis
+from app.services.text_cleanup_service import ensure_user_text_clean
 
 
 DEFAULT_CATEGORY_COUNTS = {"DSA": 0, "HLD": 0, "LLD": 0, "General": 0}
@@ -66,6 +67,7 @@ async def search(
     page: int,
     limit: int,
 ) -> dict:
+    await ensure_user_text_clean(db, user_id)
     params = {
         "user_id": str(user_id),
         "q": q.strip() if q else None,
@@ -109,9 +111,18 @@ async def search(
     selects = []
     if type_ in ("all", "note"):
         selects.append(note_select)
-    if type_ in ("all", "snippet"):
+    if type_ in ("all", "snippet") and revision_ready is not True:
         selects.append(snippet_select)
-    union_sql = " UNION ALL ".join(selects) if selects else note_select
+    if not selects:
+        payload = {
+            "results": [],
+            "total": 0,
+            "page": page,
+            "facets": {"categories": DEFAULT_CATEGORY_COUNTS, "types": {"note": 0, "snippet": 0}, "top_tags": []},
+        }
+        await redis.set(key, json.dumps(payload, default=str), ex=60)
+        return payload
+    union_sql = " UNION ALL ".join(selects)
     order_clause = {
         "alpha": "title ASC",
         "relevance": "rank DESC, updated_at DESC",
@@ -150,6 +161,7 @@ async def search(
 
 
 async def get_all_tags(db: AsyncSession, user_id: UUID) -> list[dict]:
+    await ensure_user_text_clean(db, user_id)
     rows = await db.execute(
         text(
             """

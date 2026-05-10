@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -38,6 +39,17 @@ class TaskUpdate(BaseModel):
     kanban_order: int | None = Field(default=None, ge=0)
 
 
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    category: Literal["DSA", "HLD", "LLD"]
+    day_number: int = Field(ge=1)
+    week_number: int = Field(ge=1)
+    phase: TaskPhase = TaskPhase.foundation
+    time_minutes: int = Field(default=60, ge=0)
+    difficulty: str | None = Field(default=None, max_length=40)
+    resource_url: str | None = None
+
+
 class TaskReorderItem(BaseModel):
     id: UUID
     status: TaskStatus
@@ -46,4 +58,3 @@ class TaskReorderItem(BaseModel):
 
 class TaskReorderRequest(BaseModel):
     items: list[TaskReorderItem]
-

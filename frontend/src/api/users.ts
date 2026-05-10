@@ -15,3 +15,6 @@ export async function savePushSubscription(subscription: PushSubscriptionJSON): 
   return response.data;
 }
 
+export async function removePushSubscription(): Promise<void> {
+  await apiClient.delete("/users/me/push-sub");
+}

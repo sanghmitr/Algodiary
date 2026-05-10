@@ -9,22 +9,19 @@ export function ProgressChart({ data }: Props) {
   return (
     <Card>
       <CardHeader>
-        <h2 className="font-semibold">Score trend</h2>
+        <h2 className="font-semibold">Problems solved</h2>
       </CardHeader>
       <CardContent className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="week" />
-            <YAxis domain={[0, 5]} />
+            <XAxis dataKey="date" />
+            <YAxis allowDecimals={false} />
             <Tooltip />
-            <Line type="monotone" dataKey="dsa_score" stroke="#f97316" strokeWidth={2} />
-            <Line type="monotone" dataKey="hld_score" stroke="#0d9488" strokeWidth={2} />
-            <Line type="monotone" dataKey="lld_score" stroke="#10b981" strokeWidth={2} />
+            <Line type="monotone" dataKey="problems_solved" name="Problems solved" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
           </LineChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
   );
 }
-

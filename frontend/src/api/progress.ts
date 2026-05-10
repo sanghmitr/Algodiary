@@ -40,6 +40,11 @@ export async function createWeakArea(payload: Pick<WeakArea, "category" | "topic
   return response.data;
 }
 
+export async function updateWeakArea(id: string, payload: Partial<Pick<WeakArea, "severity" | "action_plan">>): Promise<WeakArea> {
+  const response = await apiClient.patch<WeakArea>(`/progress/weak-areas/${id}`, payload);
+  return response.data;
+}
+
 export function mocks(): Promise<MockFeedback[]> {
   return getData<MockFeedback[]>("/progress/mocks");
 }

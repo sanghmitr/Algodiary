@@ -18,6 +18,7 @@ from app.services.auth_service import (
     register_user,
     store_refresh_token,
 )
+from app.services.task_service import ensure_default_tasks
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,6 +46,7 @@ async def register(payload: UserCreate, response: Response, db: AsyncSession = D
         user = await register_user(db, payload)
     except DuplicateEmailError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    await ensure_default_tasks(db, user.id)
     return await _issue_tokens(response, user)
 
 
@@ -53,6 +55,7 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
     user = await authenticate_user(db, payload.email, payload.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    await ensure_default_tasks(db, user.id)
     return await _issue_tokens(response, user)
 
 

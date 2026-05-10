@@ -5,7 +5,6 @@ import { useAuthStore } from "../store/authStore";
 export const apiClient: AxiosInstance = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
   withCredentials: true,
-  headers: { "Content-Type": "application/json" },
 });
 
 apiClient.interceptors.request.use((config) => {
@@ -30,4 +29,3 @@ export async function getData<T>(url: string, params?: Record<string, string | n
   const response = await apiClient.get<T>(url, { params });
   return response.data;
 }
-

@@ -8,7 +8,7 @@ export function Navbar() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   return (
-    <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 md:px-6">
+    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 md:px-6">
       <button className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-500" onClick={() => navigate("/kb")}>
         <Search className="h-4 w-4" />
         <span className="hidden sm:inline">Search knowledge base</span>
@@ -24,4 +24,3 @@ export function Navbar() {
     </header>
   );
 }
-

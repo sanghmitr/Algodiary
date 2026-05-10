@@ -18,12 +18,22 @@ export function useWebSocket(): void {
     const socket = new WebSocket(`${wsUrl}/ws?token=${encodeURIComponent(token)}`);
     socket.onmessage = (event: MessageEvent<string>) => {
       const payload = JSON.parse(event.data) as SocketEvent;
-      if (payload.type === "kb_updated") queryClient.invalidateQueries({ queryKey: ["kb"] });
-      if (payload.type === "task_updated") queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      if (payload.type === "progress_logged") queryClient.invalidateQueries({ queryKey: ["progress"] });
+      if (payload.type === "kb_updated") {
+        queryClient.invalidateQueries({ queryKey: ["kb"], refetchType: "none" });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"], refetchType: "none" });
+      }
+      if (payload.type === "task_updated") {
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["tasks-upcoming"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+        queryClient.invalidateQueries({ queryKey: ["progress-summary"] });
+      }
+      if (payload.type === "progress_logged") {
+        queryClient.invalidateQueries({ queryKey: ["progress"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      }
       if (payload.type === "notification") queryClient.invalidateQueries({ queryKey: ["notifications"] });
     };
     return () => socket.close();
   }, [queryClient, token]);
 }
-

@@ -1,21 +1,25 @@
 from datetime import datetime, timezone
+import re
 from uuid import UUID
 from fastapi import HTTPException
-from sqlalchemy import and_, func, select
+from sqlalchemy import String, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.note import KnowledgeCategory, Note
 from app.models.task import Task
 from app.redis_client import get_redis
 from app.schemas.note import NoteCreate, NoteUpdate
+from app.services.file_storage_service import delete_note_image as delete_stored_note_image
 from app.services.notification_service import publish_user_event
+from app.services.text_cleanup_service import ensure_user_text_clean
+from app.utils.text import clean_seed_label
 
 
 def normalize_tags(tags: list[str] | None) -> list[str]:
     seen: set[str] = set()
     normalized: list[str] = []
     for raw in tags or []:
-        tag = raw.strip()
+        tag = clean_seed_label(raw)
         key = tag.lower()
         if tag and key not in seen:
             seen.add(key)
@@ -56,6 +60,7 @@ async def create_note(db: AsyncSession, user_id: UUID, payload: NoteCreate) -> N
 
 
 async def list_notes(db: AsyncSession, user_id: UUID, task_id: UUID | None, category: KnowledgeCategory | None, tags: list[str] | None, pinned: bool | None, revision_ready: bool | None, search: str | None, page: int, limit: int) -> tuple[list[Note], int]:
+    await ensure_user_text_clean(db, user_id)
     stmt = select(Note).where(Note.user_id == user_id, Note.deleted_at.is_(None))
     count_stmt = select(func.count()).select_from(Note).where(Note.user_id == user_id, Note.deleted_at.is_(None))
     filters = []
@@ -68,7 +73,7 @@ async def list_notes(db: AsyncSession, user_id: UUID, task_id: UUID | None, cate
     if revision_ready is not None:
         filters.append(Note.is_revision_ready.is_(revision_ready))
     if search:
-        filters.append(Note.title.ilike(f"%{search}%") | Note.content.ilike(f"%{search}%"))
+        filters.append(Note.title.ilike(f"%{search}%") | Note.content.ilike(f"%{search}%") | cast(Note.tags, String).ilike(f"%{search}%"))
     for tag in normalize_tags(tags):
         filters.append(Note.tags.contains([tag]))
     if filters:
@@ -102,6 +107,33 @@ async def update_note(db: AsyncSession, user_id: UUID, note_id: UUID, payload: N
     return note
 
 
+def _remove_image_reference(content: str, url: str) -> tuple[str, bool]:
+    escaped_url = re.escape(url)
+    line_pattern = re.compile(rf"(?m)^[ \t]*!\[[^\]]*\]\({escaped_url}(?:\s+\"[^\"]*\")?\)[ \t]*(?:\r?\n)?")
+    updated, line_count = line_pattern.subn("", content)
+    if line_count:
+        return updated.strip("\n"), True
+
+    inline_pattern = re.compile(rf"!\[[^\]]*\]\({escaped_url}(?:\s+\"[^\"]*\")?\)")
+    updated, inline_count = inline_pattern.subn("", content)
+    return updated, inline_count > 0
+
+
+async def delete_note_image(db: AsyncSession, user_id: UUID, note_id: UUID, url: str, base_url: str) -> Note:
+    note = await get_note(db, user_id, note_id)
+    updated_content, removed_reference = _remove_image_reference(note.content or "", url)
+    if not removed_reference:
+        raise HTTPException(status_code=404, detail="Image reference not found in note")
+
+    await delete_stored_note_image(user_id, note_id, url, base_url)
+    note.content = updated_content
+    await db.commit()
+    await db.refresh(note)
+    await invalidate_kb_cache(user_id)
+    await publish_user_event(user_id, "kb_updated", {"resource": "note", "id": str(note.id), "action": "updated"})
+    return note
+
+
 async def delete_note(db: AsyncSession, user_id: UUID, note_id: UUID) -> None:
     note = await get_note(db, user_id, note_id)
     note.deleted_at = datetime.now(timezone.utc)
@@ -111,8 +143,8 @@ async def delete_note(db: AsyncSession, user_id: UUID, note_id: UUID) -> None:
 
 
 async def all_note_tags(db: AsyncSession, user_id: UUID) -> list[str]:
+    await ensure_user_text_clean(db, user_id)
     rows = await db.execute(
         select(func.distinct(func.jsonb_array_elements_text(Note.tags))).where(Note.user_id == user_id, Note.deleted_at.is_(None))
     )
     return sorted([row[0] for row in rows if row[0]])
-

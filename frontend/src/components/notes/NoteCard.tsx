@@ -14,7 +14,6 @@ export function NoteCard({ note, onSelect }: Props) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-semibold">{note.title}</p>
-          <p className="mt-1 line-clamp-2 text-sm text-slate-500">{note.content}</p>
         </div>
         {note.is_revision_ready ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : null}
       </div>
@@ -26,4 +25,3 @@ export function NoteCard({ note, onSelect }: Props) {
     </button>
   );
 }
-

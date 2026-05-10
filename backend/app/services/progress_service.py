@@ -1,10 +1,11 @@
-from datetime import date, timedelta
+from datetime import date
 from uuid import UUID
 from fastapi import HTTPException
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.progress import MockFeedback, ProgressLog, WeakArea
+from app.models.task import Task, TaskStatus
 from app.redis_client import get_redis
 from app.schemas.progress import (
     MockFeedbackCreate,
@@ -39,17 +40,14 @@ async def list_logs(db: AsyncSession, user_id: UUID, start: date | None, end: da
 async def summary(db: AsyncSession, user_id: UUID) -> list[dict]:
     rows = await db.execute(
         select(
-            func.date_trunc("week", ProgressLog.logged_date).label("week"),
-            func.avg(ProgressLog.dsa_score).label("dsa_score"),
-            func.avg(ProgressLog.hld_score).label("hld_score"),
-            func.avg(ProgressLog.lld_score).label("lld_score"),
-            func.sum(ProgressLog.problems_solved).label("problems_solved"),
+            func.date(Task.updated_at).label("date"),
+            func.count(Task.id).label("problems_solved"),
         )
-        .where(ProgressLog.user_id == user_id)
-        .group_by("week")
-        .order_by("week")
+        .where(Task.user_id == user_id, Task.status == TaskStatus.done, Task.dsa_topic.is_not(None))
+        .group_by("date")
+        .order_by("date")
     )
-    return [dict(row._mapping) for row in rows]
+    return [{"date": row.date.isoformat(), "problems_solved": row.problems_solved} for row in rows]
 
 
 async def heatmap(db: AsyncSession, user_id: UUID) -> list[dict]:
@@ -98,4 +96,3 @@ async def update_mock(db: AsyncSession, user_id: UUID, mock_id: UUID, payload: M
     await db.commit()
     await db.refresh(mock)
     return mock
-

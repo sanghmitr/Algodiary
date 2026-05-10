@@ -28,6 +28,10 @@ class NoteUpdate(BaseModel):
     is_revision_ready: bool | None = None
 
 
+class NoteImageDelete(BaseModel):
+    url: str = Field(min_length=1)
+
+
 class NoteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -42,4 +46,3 @@ class NoteRead(BaseModel):
     is_revision_ready: bool
     created_at: datetime
     updated_at: datetime
-

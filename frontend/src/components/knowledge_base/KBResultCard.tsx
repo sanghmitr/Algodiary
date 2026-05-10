@@ -32,13 +32,15 @@ export function KBResultCard({ item, query, view, onOpen }: Props) {
           {item.is_revision_ready ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : null}
         </div>
         <h2 className="mt-3 text-base font-semibold" dangerouslySetInnerHTML={{ __html: highlight(item.title, query) }} />
-        <p className="mt-2 line-clamp-3 text-sm text-slate-600" dangerouslySetInnerHTML={{ __html: highlight(item.preview || item.code_preview || "", query) }} />
-        {item.code_preview ? <pre className="mt-3 overflow-hidden rounded-md bg-slate-950 p-3 text-xs text-slate-100">{item.code_preview}</pre> : null}
+        {item.type === "snippet" ? (
+          <p className="mt-2 line-clamp-3 text-sm text-slate-600" dangerouslySetInnerHTML={{ __html: highlight(item.preview || item.code_preview || "", query) }} />
+        ) : null}
+        {item.type === "snippet" && item.code_preview ? <pre className="mt-3 overflow-hidden rounded-md bg-slate-950 p-3 text-xs text-slate-100">{item.code_preview}</pre> : null}
         <div className="mt-3 flex flex-wrap gap-2">
           {item.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-          <span>{item.linked_task ? `Day ${item.linked_task.day_number} — ${topic}` : "Unlinked"}</span>
+          {item.type === "snippet" ? <span>{item.linked_task ? `Day ${item.linked_task.day_number} — ${topic}` : "Unlinked"}</span> : <span />}
           <span>{relativeTime(item.updated_at)}</span>
         </div>
       </button>
@@ -50,4 +52,3 @@ export function KBResultCard({ item, query, view, onOpen }: Props) {
     </article>
   );
 }
-
