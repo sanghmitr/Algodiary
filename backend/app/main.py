@@ -1,7 +1,9 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -10,6 +12,7 @@ from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from app.config import settings
+from app.database import get_session
 from app.redis_client import close_redis
 from app.routers import auth, knowledge_base, notes, notifications, progress, snippets, tasks, users, websocket
 
@@ -36,6 +39,11 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/health/db")
+    async def health_db(db: AsyncSession = Depends(get_session)) -> dict[str, str]:
+        await db.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "ok"}
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(users.router, prefix="/api/v1")
