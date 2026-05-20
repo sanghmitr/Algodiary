@@ -1,6 +1,6 @@
 from uuid import UUID
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.note import KnowledgeCategory, Note
@@ -18,6 +18,10 @@ async def _invalidate_task_dependents(user_id: UUID) -> None:
     await get_redis().delete(f"stats:{user_id}")
 
 
+async def _lock_task_seed(db: AsyncSession, user_id: UUID) -> None:
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"seed-tasks:{user_id}"})
+
+
 async def _can_replace_legacy_seed(db: AsyncSession, user_id: UUID, existing_count: int, target_count: int | None = None) -> bool:
     if target_count is not None and existing_count == target_count:
         return False
@@ -31,6 +35,7 @@ async def _can_replace_legacy_seed(db: AsyncSession, user_id: UUID, existing_cou
 
 
 async def seed_tasks(db: AsyncSession, user_id: UUID) -> list[Task]:
+    await _lock_task_seed(db, user_id)
     existing_count = await db.scalar(select(func.count()).select_from(Task).where(Task.user_id == user_id))
     default_tasks = load_default_tasks()
     if existing_count:
