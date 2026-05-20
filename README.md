@@ -361,53 +361,154 @@ Manual smoke path:
 9. Search both from the Knowledge Base.
 10. Upload/paste an image into a note and verify preview rendering.
 
-## Deployment
+## Free Deployment
 
-### Backend on Fly.io
+This app can run on free tiers with:
 
-1. Create a Fly app.
-2. Set secrets from `backend/.env.example`.
-3. Use Neon for PostgreSQL and Upstash for Redis.
-4. Deploy from `backend/`:
+| Layer | Provider | Use |
+| --- | --- | --- |
+| Frontend | Vercel Hobby | Vite static app |
+| Backend | Render Free Web Service | FastAPI API |
+| PostgreSQL | Neon Free | App database |
+| Object storage | Cloudflare R2 Free | Note image uploads |
+| Redis | Upstash Redis Free | Rate limits, token/session data, WebSocket pub/sub, optional Celery broker |
 
-```bash
-fly deploy
+Free-tier caveats:
+
+- Render free web services can sleep after inactivity, so the first request after idle time can be slow.
+- Celery workers and Celery Beat are not included in this free web-service setup. The main app works, but scheduled reminders and weekly reports need a separate worker service or another scheduler.
+- R2 only works for public note image URLs when `R2_PUBLIC_URL` is configured.
+- Keep upload volume small on free tiers. The default `MAX_UPLOAD_MB=8` is fine for occasional note images.
+
+### 1. Create Neon PostgreSQL
+
+1. Create a Neon project and database.
+2. Copy the connection string.
+3. Convert it for this async SQLAlchemy app:
+
+```text
+postgresql://USER:PASSWORD@HOST/DB?sslmode=require
 ```
 
-Run workers as a separate Fly process or app:
+to:
+
+```text
+postgresql+asyncpg://USER:PASSWORD@HOST/DB?ssl=require
+```
+
+Use the converted value as `DATABASE_URL`.
+
+### 2. Create Upstash Redis
+
+1. Create an Upstash Redis database.
+2. Copy the Redis URL.
+3. Use it as `REDIS_URL`.
+
+Use a `rediss://` URL if Upstash gives you TLS Redis.
+
+### 3. Create Cloudflare R2 Storage
+
+1. Create an R2 bucket, for example `algodiary-uploads`.
+2. Create an R2 API token with object read/write permission for the bucket.
+3. Configure public access through an R2 public URL or a custom domain.
+4. Save these backend env vars:
+
+```text
+R2_BUCKET=algodiary-uploads
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_PUBLIC_URL=https://<public-r2-domain-or-dev-url>
+R2_ACCESS_KEY=<r2-access-key-id>
+R2_SECRET_KEY=<r2-secret-access-key>
+```
+
+### 4. Deploy Backend on Render
+
+Create a new Render Web Service from this repository.
+
+Render settings:
+
+| Setting | Value |
+| --- | --- |
+| Runtime | Python |
+| Root directory | `backend` |
+| Build command | `pip install -r requirements.txt` |
+| Start command | `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Health check path | `/health` |
+
+Set backend environment variables in Render:
+
+```text
+DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@HOST/DB?ssl=require
+REDIS_URL=<upstash-redis-url>
+SECRET_KEY=<random-32-plus-character-secret>
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+FRONTEND_URL=https://<your-vercel-domain>
+FRONTEND_URLS=https://<your-vercel-preview-domain-if-needed>
+ENVIRONMENT=production
+R2_BUCKET=algodiary-uploads
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_PUBLIC_URL=https://<public-r2-domain-or-dev-url>
+R2_ACCESS_KEY=<r2-access-key-id>
+R2_SECRET_KEY=<r2-secret-access-key>
+UPLOAD_DIR=uploads
+MAX_UPLOAD_MB=8
+VAPID_PRIVATE_KEY=<optional>
+VAPID_PUBLIC_KEY=<optional>
+VAPID_CLAIM_EMAIL=<your-email>
+BREVO_SMTP_KEY=<optional>
+```
+
+After deploy, verify:
+
+```text
+https://<render-service>.onrender.com/health
+https://<render-service>.onrender.com/health/db
+```
+
+### 5. Deploy Frontend on Vercel
+
+Create a new Vercel project from this repository.
+
+Vercel settings:
+
+| Setting | Value |
+| --- | --- |
+| Framework preset | Vite |
+| Root directory | `frontend` |
+| Install command | `npm install --legacy-peer-deps` |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+
+Set frontend environment variables in Vercel:
+
+```text
+VITE_API_BASE_URL=https://<render-service>.onrender.com
+VITE_VAPID_PUBLIC_KEY=<optional-public-vapid-key>
+```
+
+After the Vercel domain is created, return to Render and set:
+
+```text
+FRONTEND_URL=https://<your-vercel-domain>
+```
+
+Redeploy the Render service so CORS uses the final frontend URL.
+
+### 6. Optional Worker Setup
+
+For local testing, workers still run with:
 
 ```bash
+cd backend
 celery -A app.workers.celery_app.celery_app worker -B --loglevel=info
 ```
 
-### Frontend on Cloudflare Pages
-
-1. Create a Cloudflare Pages project.
-2. Set the app directory to `frontend`.
-3. Set build command:
+For production reminders and weekly reports, deploy a separate paid Render worker or another always-on worker host with:
 
 ```bash
-npm run build
-```
-
-4. Set output directory:
-
-```text
-dist
-```
-
-5. Set `VITE_API_BASE_URL` to the deployed backend origin.
-
-### File Storage on Cloudflare R2
-
-Create an R2 bucket and set:
-
-```text
-R2_BUCKET
-R2_ENDPOINT
-R2_PUBLIC_URL
-R2_ACCESS_KEY
-R2_SECRET_KEY
+celery -A app.workers.celery_app.celery_app worker -B --loglevel=info
 ```
 
 ## VAPID Keys
