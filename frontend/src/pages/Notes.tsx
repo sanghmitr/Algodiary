@@ -25,7 +25,7 @@ export function Notes() {
   const fullPageEditor = Boolean(noteId || taskId);
   const save = useCallback(async (payload: Partial<Note>) => {
     if (!selected) throw new Error("Choose a note before saving.");
-    await update.mutateAsync({ id: selected.id, payload });
+    return update.mutateAsync({ id: selected.id, payload });
   }, [selected, update]);
 
   if (fullPageEditor) {

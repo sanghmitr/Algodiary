@@ -1,9 +1,15 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
+import { cpp } from "@codemirror/lang-cpp";
+import { java } from "@codemirror/lang-java";
+import { javascript } from "@codemirror/lang-javascript";
 import { markdown } from "@codemirror/lang-markdown";
-import type { EditorView } from "@codemirror/view";
-import { AlertCircle, CheckCircle2, Eye, ImagePlus, Pencil, Save, Star, X } from "lucide-react";
+import { python } from "@codemirror/lang-python";
+import { sql } from "@codemirror/lang-sql";
+import { keymap, type EditorView } from "@codemirror/view";
+import type { Extension, TransactionSpec } from "@codemirror/state";
+import { AlertCircle, Bold, CheckCircle2, Code2, Eye, Heading2, ImagePlus, Italic, LinkIcon, List, Pencil, Save, Star, X } from "lucide-react";
 import { deleteNoteImage, uploadNoteImage } from "../../api/notes";
 import type { Category, Note } from "../../types";
 import { CATEGORIES } from "../../utils/constants";
@@ -16,19 +22,19 @@ import { TagPicker } from "./TagPicker";
 
 interface Props {
   note: Note | null;
-  onSave: (payload: Partial<Note>) => Promise<void> | void;
+  onSave: (payload: Partial<Note>) => Promise<Note | void> | Note | void;
   availableTags?: string[];
   fullHeight?: boolean;
 }
 
-function noteChanged(note: Note, draft: Partial<Note>): boolean {
+function noteChanged(note: Partial<Note>, draft: Partial<Note>): boolean {
   return (
-    (draft.title ?? "") !== note.title ||
-    (draft.content ?? "") !== note.content ||
+    (draft.title ?? "") !== (note.title ?? "") ||
+    (draft.content ?? "") !== (note.content ?? "") ||
     draft.category !== note.category ||
-    Boolean(draft.is_pinned) !== note.is_pinned ||
-    Boolean(draft.is_revision_ready) !== note.is_revision_ready ||
-    JSON.stringify(draft.tags ?? []) !== JSON.stringify(note.tags)
+    Boolean(draft.is_pinned) !== Boolean(note.is_pinned) ||
+    Boolean(draft.is_revision_ready) !== Boolean(note.is_revision_ready) ||
+    JSON.stringify(draft.tags ?? []) !== JSON.stringify(note.tags ?? [])
   );
 }
 
@@ -41,6 +47,14 @@ function savePayload(draft: Partial<Note>): Partial<Note> {
     is_pinned: draft.is_pinned,
     is_revision_ready: draft.is_revision_ready,
   };
+}
+
+function noteBaseline(note: Note): Partial<Note> {
+  return savePayload(note);
+}
+
+function mergeSavedDraft(base: Partial<Note>, payload: Partial<Note>): Partial<Note> {
+  return { ...base, ...payload };
 }
 
 function markdownImages(content: string): Array<{ alt: string; url: string }> {
@@ -83,6 +97,34 @@ function renderInline(text: string): ReactNode[] {
   }
   if (cursor < text.length) nodes.push(text.slice(cursor));
   return nodes;
+}
+
+function codeLanguageExtensions(language?: string): Extension[] {
+  const normalized = (language ?? "").trim().toLowerCase();
+  if (["js", "jsx", "javascript"].includes(normalized)) return [javascript({ jsx: true, typescript: false })];
+  if (["ts", "tsx", "typescript"].includes(normalized)) return [javascript({ jsx: true, typescript: true })];
+  if (normalized === "python" || normalized === "py") return [python()];
+  if (normalized === "java") return [java()];
+  if (["sql", "postgres", "postgresql"].includes(normalized)) return [sql()];
+  if (["c", "cc", "cpp", "c++", "h", "hpp"].includes(normalized)) return [cpp()];
+  return [];
+}
+
+function CodePreview({ code, language }: { code: string; language?: string }) {
+  const extensions = useMemo(() => codeLanguageExtensions(language), [language]);
+  return (
+    <div className="overflow-hidden rounded-lg bg-slate-950 text-sm">
+      {language ? <div className="border-b border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{language}</div> : null}
+      <CodeMirror
+        value={code}
+        theme="dark"
+        basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLine: false, highlightActiveLineGutter: false }}
+        extensions={extensions}
+        editable={false}
+        readOnly
+      />
+    </div>
+  );
 }
 
 function MarkdownPreview({ content }: { content: string }) {
@@ -168,11 +210,7 @@ function MarkdownPreview({ content }: { content: string }) {
           );
         }
         if (block.type === "code") {
-          return (
-            <pre key={index} className="overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-100">
-              <code>{block.text}</code>
-            </pre>
-          );
+          return <CodePreview key={index} code={block.text ?? ""} language={block.language} />;
         }
         if (block.type === "list") {
           return (
@@ -199,19 +237,52 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const editorRef = useRef<EditorView | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const loadedNoteIdRef = useRef<string | null>(null);
+  const savedDraftRef = useRef<Partial<Note> | null>(null);
+  const editVersionRef = useRef(0);
   const images = markdownImages(draft.content ?? "");
 
+  const updateDraft = (next: Partial<Note> | ((current: Partial<Note>) => Partial<Note>)) => {
+    editVersionRef.current += 1;
+    setDraft(next);
+  };
+
   useEffect(() => {
-    if (note) setDraft(note);
+    if (!note) {
+      loadedNoteIdRef.current = null;
+      savedDraftRef.current = null;
+      setDraft({ title: "", content: "", category: "DSA", tags: [], is_revision_ready: false });
+      return;
+    }
+    const incomingBaseline = noteBaseline(note);
+    const currentBaseline = savedDraftRef.current;
+    const isSameNote = loadedNoteIdRef.current === note.id;
+    const hasUnsavedChanges = Boolean(currentBaseline && noteChanged(currentBaseline, draft));
+
+    if (!isSameNote || !hasUnsavedChanges) {
+      loadedNoteIdRef.current = note.id;
+      savedDraftRef.current = incomingBaseline;
+      setDraft(incomingBaseline);
+    } else {
+      savedDraftRef.current = incomingBaseline;
+    }
   }, [note]);
 
   useEffect(() => {
-    if (!note || !noteChanged(note, draft)) return;
+    const savedDraft = savedDraftRef.current;
+    if (!note || !savedDraft || !noteChanged(savedDraft, draft)) return;
     if (!(draft.title ?? "").trim()) return;
+    const payload = savePayload(draft);
+    const saveVersion = editVersionRef.current;
     const timer = window.setTimeout(() => {
-      void Promise.resolve(onSave(savePayload(draft))).catch(() => {
-        setSaveNotice({ type: "error", message: "Autosave failed. Try saving again." });
-      });
+      void Promise.resolve(onSave(payload))
+        .then((updated) => {
+          if (saveVersion !== editVersionRef.current) return;
+          savedDraftRef.current = updated ? noteBaseline(updated) : mergeSavedDraft(savedDraft, payload);
+        })
+        .catch(() => {
+          setSaveNotice({ type: "error", message: "Autosave failed. Try saving again." });
+        });
     }, 2000);
     return () => window.clearTimeout(timer);
   }, [draft, note, onSave]);
@@ -239,8 +310,11 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
     if (!validateDraft()) return;
     setManualSaving(true);
     setSaveNotice(null);
+    const payload = savePayload(draft);
     try {
-      await onSave(savePayload(draft));
+      const updated = await onSave(payload);
+      editVersionRef.current += 1;
+      savedDraftRef.current = updated ? noteBaseline(updated) : mergeSavedDraft(savedDraftRef.current ?? {}, payload);
       setSaveNotice({ type: "success", message: "Note saved." });
     } catch (error) {
       setSaveNotice({ type: "error", message: error instanceof Error ? error.message : "Unable to save note." });
@@ -252,7 +326,7 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
   const insertMarkdown = (markdownText: string) => {
     const view = editorRef.current;
     if (!view || mode === "preview") {
-      setDraft((current) => ({ ...current, content: `${current.content ?? ""}\n${markdownText}` }));
+      updateDraft((current) => ({ ...current, content: `${current.content ?? ""}\n${markdownText}` }));
       return;
     }
     const selection = view.state.selection.main;
@@ -263,6 +337,98 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
     });
     view.focus();
   };
+
+  const dispatchEditorChange = (spec: TransactionSpec) => {
+    const view = editorRef.current;
+    if (!view || mode === "preview") return false;
+    view.dispatch({ ...spec, scrollIntoView: true });
+    view.focus();
+    return true;
+  };
+
+  const wrapSelection = (prefix: string, suffix = prefix, placeholder = "text") => {
+    const view = editorRef.current;
+    if (!view || mode === "preview") return false;
+    const selection = view.state.selection.main;
+    const selectedText = view.state.sliceDoc(selection.from, selection.to);
+    const innerText = selectedText || placeholder;
+    const insert = `${prefix}${innerText}${suffix}`;
+    return dispatchEditorChange({
+      changes: { from: selection.from, to: selection.to, insert },
+      selection: { anchor: selection.from + prefix.length, head: selection.from + prefix.length + innerText.length },
+    });
+  };
+
+  const insertLinePrefix = (prefix: string) => {
+    const view = editorRef.current;
+    if (!view || mode === "preview") return false;
+    const selection = view.state.selection.main;
+    const doc = view.state.doc;
+    const startLine = doc.lineAt(selection.from);
+    const endPosition = selection.to > selection.from && doc.sliceString(selection.to - 1, selection.to) === "\n" ? selection.to - 1 : selection.to;
+    const endLine = doc.lineAt(endPosition);
+    const changes = [];
+    let insertedBeforeHead = 0;
+    for (let lineNumber = startLine.number; lineNumber <= endLine.number; lineNumber += 1) {
+      const line = doc.line(lineNumber);
+      if (!line.text.trim() || line.text.startsWith(prefix)) continue;
+      changes.push({ from: line.from, insert: prefix });
+      if (line.from <= selection.head) insertedBeforeHead += prefix.length;
+    }
+    if (!changes.length) return true;
+    return dispatchEditorChange({
+      changes,
+      selection: { anchor: selection.anchor + (startLine.from <= selection.anchor ? prefix.length : 0), head: selection.head + insertedBeforeHead },
+    });
+  };
+
+  const insertLink = () => {
+    const view = editorRef.current;
+    if (!view || mode === "preview") return false;
+    const selection = view.state.selection.main;
+    const selectedText = view.state.sliceDoc(selection.from, selection.to) || "link text";
+    const insert = `[${selectedText}](https://)`;
+    const urlStart = selection.from + selectedText.length + 3;
+    return dispatchEditorChange({
+      changes: { from: selection.from, to: selection.to, insert },
+      selection: { anchor: urlStart, head: urlStart + "https://".length },
+    });
+  };
+
+  const insertCodeBlock = () => {
+    const view = editorRef.current;
+    if (!view || mode === "preview") return false;
+    const selection = view.state.selection.main;
+    const selectedText = view.state.sliceDoc(selection.from, selection.to) || "code";
+    const insert = `\n\`\`\`\n${selectedText}\n\`\`\`\n`;
+    return dispatchEditorChange({
+      changes: { from: selection.from, to: selection.to, insert },
+      selection: { anchor: selection.from + 5, head: selection.from + 5 + selectedText.length },
+    });
+  };
+
+  const insertImageMarkup = () => {
+    const view = editorRef.current;
+    if (!view || mode === "preview") return false;
+    const selection = view.state.selection.main;
+    const selectedText = view.state.sliceDoc(selection.from, selection.to) || "image";
+    const insert = `![${selectedText}](https://)`;
+    const urlStart = selection.from + selectedText.length + 4;
+    return dispatchEditorChange({
+      changes: { from: selection.from, to: selection.to, insert },
+      selection: { anchor: urlStart, head: urlStart + "https://".length },
+    });
+  };
+
+  const markdownShortcuts = useMemo(
+    () =>
+      keymap.of([
+        { key: "Mod-b", run: () => wrapSelection("**", "**", "bold text") },
+        { key: "Mod-i", run: () => wrapSelection("_", "_", "italic text") },
+        { key: "Mod-k", run: insertLink },
+      ]),
+    [mode],
+  );
 
   const uploadImage = async (file: File) => {
     if (!note) return;
@@ -295,6 +461,8 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
     setUploadError("");
     try {
       const updated = await deleteNoteImage(note.id, url);
+      editVersionRef.current += 1;
+      savedDraftRef.current = noteBaseline(updated);
       setDraft(updated);
       queryClient.setQueryData(["note", updated.id], updated);
       queryClient.setQueriesData<Note[]>({ queryKey: ["notes"] }, (current) => current?.map((item) => (item.id === updated.id ? updated : item)));
@@ -335,10 +503,10 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
         </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value as Category }))}>
+        <Select value={draft.category} onChange={(event) => updateDraft((current) => ({ ...current, category: event.target.value as Category }))}>
           {CATEGORIES.map((category) => <option key={category}>{category}</option>)}
         </Select>
-        <Switch checked={Boolean(draft.is_revision_ready)} onCheckedChange={(checked) => setDraft((current) => ({ ...current, is_revision_ready: checked }))} label="Revision Ready" />
+        <Switch checked={Boolean(draft.is_revision_ready)} onCheckedChange={(checked) => updateDraft((current) => ({ ...current, is_revision_ready: checked }))} label="Revision Ready" />
         {draft.is_revision_ready ? <Badge tone="gold"><Star className="mr-1 h-3 w-3 fill-amber-400" />Ready</Badge> : null}
       </div>
       <Input
@@ -346,7 +514,7 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
         value={draft.title ?? ""}
         placeholder="Note title"
         className={saveNotice?.type === "error" && !(draft.title ?? "").trim() ? "border-red-300 focus:ring-red-500" : undefined}
-        onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+        onChange={(event) => updateDraft((current) => ({ ...current, title: event.target.value }))}
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -355,6 +523,29 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
             {uploading ? "Uploading..." : "Add image"}
           </Button>
           <span className="text-xs text-slate-500">Paste or drop PNG, JPEG, GIF, WebP, or SVG diagrams into the editor.</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1 rounded-md border border-slate-200 bg-white p-1">
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 hover:bg-slate-100" onClick={() => wrapSelection("**", "**", "bold text")} aria-label="Bold" title="Bold">
+            <Bold className="h-4 w-4" />
+          </button>
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 hover:bg-slate-100" onClick={() => wrapSelection("_", "_", "italic text")} aria-label="Italic" title="Italic">
+            <Italic className="h-4 w-4" />
+          </button>
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 hover:bg-slate-100" onClick={() => insertLinePrefix("## ")} aria-label="Heading" title="Heading">
+            <Heading2 className="h-4 w-4" />
+          </button>
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 hover:bg-slate-100" onClick={() => insertLinePrefix("- ")} aria-label="Bulleted list" title="Bulleted list">
+            <List className="h-4 w-4" />
+          </button>
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 hover:bg-slate-100" onClick={insertLink} aria-label="Link" title="Link">
+            <LinkIcon className="h-4 w-4" />
+          </button>
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 hover:bg-slate-100" onClick={insertCodeBlock} aria-label="Code block" title="Code block">
+            <Code2 className="h-4 w-4" />
+          </button>
+          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 hover:bg-slate-100" onClick={insertImageMarkup} aria-label="Image markdown" title="Image markdown">
+            <ImagePlus className="h-4 w-4" />
+          </button>
         </div>
         <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-100 p-1">
           <button type="button" className={`inline-flex h-8 items-center justify-center gap-1 rounded px-3 text-sm font-semibold ${mode === "edit" ? "bg-white shadow-sm" : "text-slate-600"}`} onClick={() => setMode("edit")}>
@@ -373,11 +564,11 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
         <CodeMirror
           height={fullHeight ? "calc(100vh - 390px)" : undefined}
           value={draft.content ?? ""}
-          extensions={[markdown()]}
           onCreateEditor={(view) => {
             editorRef.current = view;
           }}
-          onChange={(value) => setDraft((current) => ({ ...current, content: value }))}
+          onChange={(value) => updateDraft((current) => ({ ...current, content: value }))}
+          extensions={[markdown(), markdownShortcuts]}
         />
       ) : (
         <MarkdownPreview content={draft.content ?? ""} />
@@ -409,7 +600,7 @@ export function NoteEditor({ note, onSave, availableTags = [], fullHeight = fals
           </div>
         </div>
       ) : null}
-      <TagPicker value={draft.tags ?? []} suggestions={availableTags} onChange={(tags) => setDraft((current) => ({ ...current, tags }))} />
+      <TagPicker value={draft.tags ?? []} suggestions={availableTags} onChange={(tags) => updateDraft((current) => ({ ...current, tags }))} />
       <Button onClick={() => void saveManually()} disabled={manualSaving}>
         <Save className="h-4 w-4" />
         {manualSaving ? "Saving..." : "Save"}
